@@ -1,0 +1,1890 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>數字猜猜樂 - 十字分解法互動學習網</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel for JSX compilation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <style>
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    /* Confetti animation styles */
+    @keyframes confetti-fall {
+      0% { transform: translateY(-10px) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+    }
+    .confetti {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      animation: confetti-fall 3s linear forwards;
+    }
+    /* Error shake animation */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-4px); }
+      75% { transform: translateX(4px); }
+    }
+    .animate-shake {
+      animation: shake 0.2s ease-in-out 0s 2;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // --- Web Audio Synthesizer for Retro Game Sound Effects ---
+    const playSound = (type) => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (type === 'success') {
+          const now = ctx.currentTime;
+          const freqs = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+          freqs.forEach((f, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.setValueAtTime(f, now + i * 0.08);
+            gain.gain.setValueAtTime(0.08, now + i * 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.35);
+            osc.start(now + i * 0.08);
+            osc.stop(now + i * 0.08 + 0.35);
+          });
+        } else if (type === 'error') {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.setValueAtTime(140, ctx.currentTime);
+          osc.frequency.linearRampToValueAtTime(90, ctx.currentTime + 0.25);
+          gain.gain.setValueAtTime(0.12, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.25);
+        } else if (type === 'level-up') {
+          const now = ctx.currentTime;
+          const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50];
+          notes.forEach((f, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.setValueAtTime(f, now + i * 0.05);
+            gain.gain.setValueAtTime(0.06, now + i * 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.25);
+            osc.start(now + i * 0.05);
+            osc.stop(now + i * 0.05 + 0.25);
+          });
+        } else if (type === 'click') {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.setValueAtTime(600, ctx.currentTime);
+          gain.gain.setValueAtTime(0.05, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.08);
+        }
+      } catch (e) {
+        console.warn("Audio Context blocked or unsupported in this environment.", e);
+      }
+    };
+
+    // --- Classic Sheet Data (Exact representations of the uploaded image 12857) ---
+    const CLASSIC_PROBLEMS = [
+      { id: 1, top: 2, left: 12, bottom: 10, right: 20, given: ['top', 'left'] },
+      { id: 2, top: -6, left: -12, bottom: -6, right: 36, given: ['top', 'left'] },
+      { id: 3, left: 10, bottom: 8, top: 2, right: 16, given: ['left', 'bottom'] },
+      { id: 4, left: -24, bottom: -12, top: -12, right: 144, given: ['left', 'bottom'] },
+      { id: 5, bottom: -4, right: -32, top: 8, left: 4, given: ['bottom', 'right'] },
+      { id: 6, top: 8, bottom: -9, left: -1, right: -72, given: ['top', 'bottom'] },
+      { id: 7, left: 4, bottom: 7, top: -3, right: -21, given: ['left', 'bottom'] },
+      { id: 8, top: 7, left: 8, bottom: 1, right: 7, given: ['top', 'left'] }
+    ];
+
+    // --- Part 2 Sheet Data (Exact representations of the uploaded image 12859: 十字分解練習 卷-1) ---
+    const WRITTEN_PROBLEMS = [
+      { id: 1, poly: 'x² - 5x - 36', roots: [4, -9], displayPoly: "x² - 5x - 36", hintSum: -5, hintProd: -36 },
+      { id: 2, poly: 'x² - 4x - 5', roots: [1, -5], displayPoly: "x² - 4x - 5", hintSum: -4, hintProd: -5 },
+      { id: 3, poly: 'x² - 8x + 12', roots: [-2, -6], displayPoly: "x² - 8x + 12", hintSum: -8, hintProd: 12 },
+      { id: 4, poly: 'x² - 10x + 21', roots: [-3, -7], displayPoly: "x² - 10x + 21", hintSum: -10, hintProd: 21 },
+      { id: 5, poly: 'x² - 4x - 60', roots: [6, -10], displayPoly: "x² - 4x - 60", hintSum: -4, hintProd: -60 }
+    ];
+
+    // --- Format Polynomial Nicely ---
+    const formatPolynomial = (b, c) => {
+      let bPart = '';
+      if (b > 0) {
+        bPart = b === 1 ? ' + x' : ` + ${b}x`;
+      } else if (b < 0) {
+        bPart = b === -1 ? ' - x' : ` - ${Math.abs(b)}x`;
+      }
+      
+      let cPart = '';
+      if (c > 0) {
+        cPart = ` + ${c}`;
+      } else if (c < 0) {
+        cPart = ` - ${Math.abs(c)}`;
+      }
+      
+      return `x²${bPart}${cPart}`;
+    };
+
+    // --- Robust Factoring Answer Parser ---
+    const checkFactoringAnswer = (userAns, correctRoots) => {
+      if (!userAns) return false;
+      const normalized = userAns.replace(/\s+/g, '').toLowerCase();
+      const [r1, r2] = correctRoots;
+      const sign1 = r1 >= 0 ? '+' : '';
+      const sign2 = r2 >= 0 ? '+' : '';
+      
+      const possible1 = `(x${sign1}${r1})(x${sign2}${r2})`.replace(/\s+/g, '').toLowerCase();
+      const possible2 = `(x${sign2}${r2})(x${sign1}${r1})`.replace(/\s+/g, '').toLowerCase();
+      
+      return normalized === possible1 || normalized === possible2;
+    };
+
+    // --- Lucide Icon Helper ---
+    function Icon({ name, className = "w-5 h-5", ...props }) {
+      const [svgContent, setSvgContent] = useState("");
+      useEffect(() => {
+        if (window.lucide) {
+          const iconNode = window.lucide.icons[name];
+          if (iconNode) {
+            const svg = iconNode.map(node => {
+              const [tag, attrs] = node;
+              const attrString = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(" ");
+              return `<${tag} ${attrString} />`;
+            }).join("");
+            setSvgContent(svg);
+          }
+        }
+      }, [name]);
+
+      return (
+        <svg
+          className={`${className} inline-block`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          dangerouslySetInnerHTML={{ __html: svgContent }}
+          {...props}
+        />
+      );
+    }
+
+    // --- Confetti Effect Component ---
+    function ConfettiEffect({ trigger }) {
+      const [particles, setParticles] = useState([]);
+
+      useEffect(() => {
+        if (!trigger) return;
+        const colors = ['#f43f5e', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+        const list = Array.from({ length: 60 }).map((_, i) => ({
+          id: i,
+          x: Math.random() * 100, // percentage
+          color: colors[Math.floor(Math.random() * colors.length)],
+          delay: Math.random() * 0.5,
+          duration: 1.5 + Math.random() * 1.5,
+          size: 6 + Math.random() * 8
+        }));
+        setParticles(list);
+        const timer = setTimeout(() => setParticles([]), 3500);
+        return () => clearTimeout(timer);
+      }, [trigger]);
+
+      return (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-50">
+          {particles.map(p => (
+            <div
+              key={p.id}
+              className="confetti"
+              style={{
+                left: `${p.x}%`,
+                backgroundColor: p.color,
+                width: `${p.size}px`,
+                height: `${p.size}px`,
+                animationDelay: `${p.delay}s`,
+                animationDuration: `${p.duration}s`,
+                borderRadius: Math.random() > 0.5 ? '50%' : '2px'
+              }}
+            />
+          ))}
+        </div>
+      );
+    }
+
+    // --- Cross Component (The Core SVG Math Component) ---
+    function CrossItem({
+      id,
+      top,
+      bottom,
+      left,
+      right,
+      given = [],
+      userAnswers = {},
+      onAnswerChange,
+      showResults = false,
+      isHighlighted = false,
+      interactive = true
+    }) {
+      const isFieldGiven = (field) => given.includes(field);
+
+      const getUserValue = (field) => {
+        if (userAnswers[field] !== undefined) return userAnswers[field];
+        if (userAnswers[`${id}_${field}`] !== undefined) return userAnswers[`${id}_${field}`];
+        return '';
+      };
+
+      const safeParse = (field) => {
+        const valStr = getUserValue(field);
+        if (valStr === undefined || valStr === '' || valStr === '-') return null;
+        return parseInt(valStr);
+      };
+
+      const isCorrect = (field) => {
+        const valNum = safeParse(field);
+        if (valNum === null) return null;
+
+        const topHidden = !given.includes('top');
+        const bottomHidden = !given.includes('bottom');
+
+        if (topHidden && bottomHidden && (field === 'top' || field === 'bottom')) {
+          const valT = safeParse('top');
+          const valB = safeParse('bottom');
+
+          if (field === 'top') {
+            if (valB !== null) {
+              return (valT === top && valB === bottom) || (valT === bottom && valB === top);
+            } else {
+              return valT === top || valT === bottom;
+            }
+          } else { 
+            if (valT !== null) {
+              return (valT === top && valB === bottom) || (valT === bottom && valB === top);
+            } else {
+              return valB === top || valB === bottom;
+            }
+          }
+        }
+
+        const expected = field === 'top' ? top : field === 'bottom' ? bottom : field === 'left' ? left : right;
+        return valNum === expected;
+      };
+
+      const handleInputChange = (field, val) => {
+        if (val === '' || val === '-' || /^-?\d+$/.test(val)) {
+          onAnswerChange(id, field, val);
+        }
+      };
+
+      const [focusedField, setFocusedField] = useState(null);
+
+      const renderValue = (field, val, placeholder) => {
+        const isGiven = isFieldGiven(field);
+        const userVal = getUserValue(field);
+        const correct = isCorrect(field);
+
+        if (isGiven) {
+          return (
+            <div className="text-xl font-bold text-slate-800 bg-slate-100/80 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm min-w-[50px] text-center">
+              {val}
+            </div>
+          );
+        }
+
+        if (!interactive) {
+          return (
+            <div className="text-xl font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-200 shadow-sm min-w-[50px] text-center">
+              {val}
+            </div>
+          );
+        }
+
+        return (
+          <div className="relative group">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={userVal}
+              onChange={(e) => handleInputChange(field, e.target.value)}
+              onFocus={() => { playSound('click'); setFocusedField(field); }}
+              onBlur={() => setFocusedField(null)}
+              placeholder={placeholder}
+              className={`w-14 h-10 text-center text-lg font-bold rounded-lg border-2 transition-all shadow-sm focus:outline-none focus:scale-110 duration-200
+                ${showResults
+                  ? correct
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-emerald-100'
+                    : 'border-rose-500 bg-rose-50 text-rose-700 shadow-rose-100 animate-shake'
+                  : 'border-slate-300 hover:border-indigo-400 bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100'
+                }`}
+              disabled={showResults && correct}
+            />
+            {showResults && correct && (
+              <span className="absolute -top-3 -right-3 bg-emerald-500 text-white rounded-full p-0.5 shadow-md flex items-center justify-center scale-75 animate-bounce">
+                <Icon name="Check" className="w-3.5 h-3.5 stroke-[3]" />
+              </span>
+            )}
+            {showResults && correct === false && (
+              <span className="absolute -top-3 -right-3 bg-rose-500 text-white rounded-full p-0.5 shadow-md flex items-center justify-center scale-75">
+                <Icon name="X" className="w-3.5 h-3.5 stroke-[3]" />
+              </span>
+            )}
+          </div>
+        );
+      };
+
+      const getLineStyles = () => {
+        const baseStyle = "stroke-slate-300 transition-all duration-300";
+        let lineTL_BR = baseStyle; 
+        let lineTR_BL = baseStyle; 
+
+        if (focusedField === 'left') {
+          lineTL_BR = `${baseStyle} stroke-indigo-400 stroke-[3px]`;
+          lineTR_BL = `${baseStyle} stroke-indigo-400 stroke-[3px]`;
+        } else if (focusedField === 'right') {
+          lineTL_BR = `${baseStyle} stroke-violet-400 stroke-[3px]`;
+          lineTR_BL = `${baseStyle} stroke-violet-400 stroke-[3px]`;
+        }
+
+        return { lineTL_BR, lineTR_BL };
+      };
+
+      const { lineTL_BR, lineTR_BL } = getLineStyles();
+
+      // Current values typed by user or prefilled
+      const valT = isFieldGiven('top') ? top : safeParse('top');
+      const valB = isFieldGiven('bottom') ? bottom : safeParse('bottom');
+
+      return (
+        <div className={`relative bg-white rounded-2xl p-6 border transition-all duration-300 flex flex-col items-center justify-center
+          ${isHighlighted ? 'border-indigo-500 ring-2 ring-indigo-100 shadow-lg' : 'border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300'}`}
+          style={{ minHeight: '190px' }}
+        >
+          <div className="absolute top-3 left-4 text-sm font-semibold text-slate-400 flex items-center gap-1.5">
+            <span className="bg-slate-100 text-slate-600 rounded-md w-6 h-6 flex items-center justify-center font-bold text-xs">{id}</span>
+          </div>
+
+          {focusedField === 'left' && (
+            <div className="absolute top-2 right-4 bg-indigo-50 text-indigo-700 text-xs font-bold px-2 py-1 rounded-md border border-indigo-100 animate-pulse">
+              相加關係：上 + 下 = 左
+            </div>
+          )}
+          {focusedField === 'right' && (
+            <div className="absolute top-2 right-4 bg-violet-50 text-violet-700 text-xs font-bold px-2 py-1 rounded-md border border-violet-100 animate-pulse">
+              相乘關係：上 × 下 = 右
+            </div>
+          )}
+
+          <div className="w-full max-w-[190px] h-[120px] relative mt-2 flex items-center justify-center">
+            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 200 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="100" cy="60" r="12" fill="white" className="stroke-slate-100 stroke-[2]" />
+              <line x1="20" y1="15" x2="180" y2="105" className={lineTL_BR} strokeWidth="3" strokeLinecap="round" />
+              <line x1="20" y1="105" x2="180" y2="15" className={lineTR_BL} strokeWidth="3" strokeLinecap="round" />
+              <circle cx="100" cy="60" r="8" className="fill-slate-50 stroke-slate-400" strokeWidth="2" />
+              <line x1="96" y1="60" x2="104" y2="60" className="stroke-slate-500" strokeWidth="1.5" />
+              <line x1="100" y1="56" x2="100" y2="64" className="stroke-slate-500" strokeWidth="1.5" />
+            </svg>
+
+            <div className="absolute top-[-4px] left-1/2 -translate-x-1/2 z-10">
+              {renderValue('top', top, '上')}
+            </div>
+            <div className="absolute top-1/2 left-[12px] -translate-y-1/2 z-10">
+              {renderValue('left', left, '左')}
+            </div>
+            <div className="absolute top-1/2 right-[12px] -translate-y-1/2 z-10">
+              {renderValue('right', right, '右')}
+            </div>
+            <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 z-10">
+              {renderValue('bottom', bottom, '下')}
+            </div>
+          </div>
+
+          {/* Bottom Info Row: Dynamic Helper or Final Correct Solution */}
+          <div className="mt-4 pt-3 border-t border-slate-100 w-full text-xs text-slate-500">
+            {showResults ? (
+              <div className="flex flex-col items-center gap-1">
+                <span className="font-bold text-slate-700">正確公式解析：</span>
+                <div className="flex items-center justify-center gap-3 font-medium flex-wrap text-center">
+                  <span className="flex items-center gap-1">
+                    <span className="text-indigo-500 font-bold">加法：</span>{top} + ({bottom}) = {left}
+                  </span>
+                  <span className="text-slate-300">|</span>
+                  <span className="flex items-center gap-1">
+                    <span className="text-violet-500 font-bold">乘法：</span>{top} × ({bottom}) = {right}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              interactive && (
+                valT !== null && valB !== null ? (
+                  <div className="bg-slate-50 p-2 rounded-xl w-full text-center space-y-1">
+                    <div className="font-semibold text-slate-600 text-[10px] uppercase tracking-wider">即時配對計算</div>
+                    <div className="font-mono flex flex-col items-center gap-0.5 text-[11px]">
+                      <span className={valT + valB === left ? "text-emerald-600 font-bold" : "text-slate-500"}>
+                        和：{valT} + ({valB}) = {valT + valB} {valT + valB === left ? '✅' : `(目標: ${left})`}
+                      </span>
+                      <span className={valT * valB === right ? "text-emerald-600 font-bold" : "text-slate-500"}>
+                        積：{valT} × ({valB}) = {valT * valB} {valT * valB === right ? '✅' : `(目標: ${right})`}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-400 italic text-center py-1">填寫上、下兩數進行草稿試算</div>
+                )
+              )
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // --- Main App Component ---
+    function App() {
+      const [activeTab, setActiveTab] = useState('sheet'); // 'sheet', 'writtenSheet', 'challenge', 'calculator', 'tutorial'
+      const [soundOn, setSoundOn] = useState(true);
+
+      // --- Student General Info ---
+      const [studentName, setStudentName] = useState('');
+      const [studentClass, setStudentClass] = useState('');
+      const [studentSeat, setStudentSeat] = useState('');
+
+      // --- TAB 1: Classic Cross Sheet States ---
+      const [sheetAnswers, setSheetAnswers] = useState({});
+      const [showSheetResults, setShowSheetResults] = useState(false);
+      const [sheetCompleted, setSheetCompleted] = useState(false);
+      const [score, setScore] = useState(0);
+      const [triggerConfetti, setTriggerConfetti] = useState(0);
+
+      // --- TAB 2: Part 2 Algebraic Written Sheet States ---
+      // Interactive Example: x^2 - 3x - 4
+      const [exampleAnswers, setExampleAnswers] = useState({ top: '', bottom: '' });
+      const [exampleStatus, setExampleStatus] = useState(null); // 'correct', 'incorrect', null
+
+      // Written Problems Answers
+      const [writtenAnswers, setWrittenAnswers] = useState({});
+      const [showWrittenResults, setShowWrittenResults] = useState(false);
+      const [writtenScore, setWrittenScore] = useState(0);
+      const [writtenCompleted, setWrittenCompleted] = useState(false);
+      const [hintProblemId, setHintProblemId] = useState(null); 
+
+      // --- TAB 3: Infinite Challenge States ---
+      const [challengeType, setChallengeType] = useState('factoring'); 
+      const [challengeDifficulty, setChallengeDifficulty] = useState('medium'); 
+      const [challengeProblem, setChallengeProblem] = useState(null);
+      const [challengeAnswers, setChallengeAnswers] = useState({}); 
+      const [factoringUserAns, setFactoringUserAns] = useState(''); 
+      const [factoringDraft, setFactoringDraft] = useState({ top: '', bottom: '' }); 
+
+      // Independent stats for both challenge modes
+      const [challengeStats, setChallengeStats] = useState({ correct: 0, total: 0, streak: 0, bestStreak: 0 });
+      const [factoringStats, setFactoringStats] = useState({ correct: 0, total: 0, streak: 0, bestStreak: 0 });
+
+      const [challengeShowResult, setChallengeShowResult] = useState(false);
+      const [challengeTimer, setChallengeTimer] = useState(0);
+      const [isTimerRunning, setIsTimerRunning] = useState(false);
+
+      // --- TAB 4: Calculator States ---
+      const [calcA, setCalcA] = useState('5'); 
+      const [calcB, setCalcB] = useState('6');
+      const [calcResult, setCalcResult] = useState(null);
+
+      // Timer Effect for Challenge Mode
+      useEffect(() => {
+        let interval;
+        if (isTimerRunning && activeTab === 'challenge') {
+          interval = setInterval(() => {
+            setChallengeTimer(t => t + 1);
+          }, 1000);
+        }
+        return () => clearInterval(interval);
+      }, [isTimerRunning, activeTab]);
+
+      const triggerSound = (type) => {
+        if (soundOn) playSound(type);
+      };
+
+      // --- TAB 1 actions ---
+      const resetClassicSheet = () => {
+        setSheetAnswers({});
+        setShowSheetResults(false);
+        setSheetCompleted(false);
+        setScore(0);
+        triggerSound('click');
+      };
+
+      const handleSheetAnswerChange = (problemId, field, value) => {
+        setSheetAnswers(prev => ({ ...prev, [`${problemId}_${field}`]: value }));
+      };
+
+      const checkClassicSheet = () => {
+        let totalQuestions = 0;
+        let correctAnswers = 0;
+
+        CLASSIC_PROBLEMS.forEach(p => {
+          const topHidden = !p.given.includes('top');
+          const bottomHidden = !p.given.includes('bottom');
+          const leftHidden = !p.given.includes('left');
+          const rightHidden = !p.given.includes('right');
+
+          const getVal = (f) => {
+            const valStr = sheetAnswers[`${p.id}_${f}`];
+            if (valStr === undefined || valStr === '' || valStr === '-') return null;
+            return parseInt(valStr);
+          };
+
+          const valT = getVal('top');
+          const valB = getVal('bottom');
+          const valL = getVal('left');
+          const valR = getVal('right');
+
+          if (topHidden && bottomHidden) {
+            totalQuestions += 2;
+            const matchNormal = (valT === p.top && valB === p.bottom);
+            const matchSwapped = (valT === p.bottom && valB === p.top);
+            if (matchNormal || matchSwapped) {
+              correctAnswers += 2;
+            }
+          } else {
+            if (topHidden) {
+              totalQuestions++;
+              if (valT === p.top) correctAnswers++;
+            }
+            if (bottomHidden) {
+              totalQuestions++;
+              if (valB === p.bottom) correctAnswers++;
+            }
+          }
+
+          if (leftHidden) {
+            totalQuestions++;
+            if (valL === p.left) correctAnswers++;
+          }
+          if (rightHidden) {
+            totalQuestions++;
+            if (valR === p.right) correctAnswers++;
+          }
+        });
+
+        const calculatedScore = Math.round((correctAnswers / totalQuestions) * 100);
+        setScore(calculatedScore);
+        setShowSheetResults(true);
+        setSheetCompleted(correctAnswers === totalQuestions);
+
+        if (correctAnswers === totalQuestions) {
+          triggerSound('level-up');
+          setTriggerConfetti(prev => prev + 1);
+        } else if (calculatedScore >= 60) {
+          triggerSound('success');
+        } else {
+          triggerSound('error');
+        }
+      };
+
+      // --- TAB 2 Actions ---
+      // Check interactive example
+      const checkExample = () => {
+        const t = parseInt(exampleAnswers.top);
+        const b = parseInt(exampleAnswers.bottom);
+        if (isNaN(t) || isNaN(b)) {
+          setExampleStatus('incorrect');
+          triggerSound('error');
+          return;
+        }
+
+        if ((t === 1 && b === -4) || (t === -4 && b === 1)) {
+          setExampleStatus('correct');
+          triggerSound('success');
+          setTriggerConfetti(prev => prev + 1);
+        } else {
+          setExampleStatus('incorrect');
+          triggerSound('error');
+        }
+      };
+
+      const checkWrittenSheetAnswers = () => {
+        let correctCount = 0;
+        WRITTEN_PROBLEMS.forEach(p => {
+          const userVal = writtenAnswers[p.id] || '';
+          if (checkFactoringAnswer(userVal, p.roots)) {
+            correctCount++;
+          }
+        });
+
+        const calculatedScore = Math.round((correctCount / WRITTEN_PROBLEMS.length) * 100);
+        setWrittenScore(calculatedScore);
+        setShowWrittenResults(true);
+        setWrittenCompleted(correctCount === WRITTEN_PROBLEMS.length);
+
+        if (correctCount === WRITTEN_PROBLEMS.length) {
+          triggerSound('level-up');
+          setTriggerConfetti(prev => prev + 1);
+        } else if (calculatedScore >= 60) {
+          triggerSound('success');
+        } else {
+          triggerSound('error');
+        }
+      };
+
+      const resetWrittenSheet = () => {
+        setWrittenAnswers({});
+        setShowWrittenResults(false);
+        setWrittenCompleted(false);
+        setWrittenScore(0);
+        setHintProblemId(null);
+        triggerSound('click');
+      };
+
+      // --- TAB 3 Actions (Infinite Challenge) ---
+      const generateChallenge = (type = challengeType, difficulty = challengeDifficulty) => {
+        let T, B;
+        if (difficulty === 'easy') {
+          T = Math.floor(Math.random() * 8) + 1;
+          B = Math.floor(Math.random() * 8) + 1;
+        } else if (difficulty === 'medium') {
+          T = Math.floor(Math.random() * 21) - 10; 
+          B = Math.floor(Math.random() * 21) - 10;
+          if (T === 0) T = 2;
+          if (B === 0) B = -3;
+        } else {
+          T = Math.floor(Math.random() * 31) - 15; 
+          B = Math.floor(Math.random() * 31) - 15;
+          if (T === 0) T = 7;
+          if (B === 0) B = -8;
+        }
+
+        const L = T + B;
+        const R = T * B;
+
+        let given = [];
+        if (type === 'number') {
+          const hideMode = Math.random();
+          if (hideMode < 0.6) {
+            given = ['left', 'right']; 
+          } else if (hideMode < 0.8) {
+            given = ['top', 'bottom'];
+          } else {
+            given = Math.random() > 0.5 ? ['top', 'left'] : ['bottom', 'right'];
+          }
+        } else {
+          given = ['left', 'right'];
+        }
+
+        setChallengeProblem({ top: T, bottom: B, left: L, right: R, given });
+        setChallengeAnswers({});
+        setFactoringUserAns('');
+        setFactoringDraft({ top: '', bottom: '' });
+        setChallengeShowResult(false);
+        setChallengeTimer(0);
+        setIsTimerRunning(true);
+      };
+
+      useEffect(() => {
+        if (activeTab === 'challenge') {
+          generateChallenge(challengeType, challengeDifficulty);
+        }
+      }, [activeTab, challengeType, challengeDifficulty]);
+
+      const submitChallenge = () => {
+        if (!challengeProblem) return;
+        setIsTimerRunning(false);
+
+        let isAllCorrect = true;
+        const p = challengeProblem;
+
+        if (challengeType === 'number') {
+          const getVal = (f) => {
+            const valStr = challengeAnswers[f];
+            if (valStr === undefined || valStr === '' || valStr === '-') return null;
+            return parseInt(valStr);
+          };
+
+          const valT = getVal('top');
+          const valB = getVal('bottom');
+          const valL = getVal('left');
+          const valR = getVal('right');
+
+          const topHidden = !p.given.includes('top');
+          const bottomHidden = !p.given.includes('bottom');
+          const leftHidden = !p.given.includes('left');
+          const rightHidden = !p.given.includes('right');
+
+          if (topHidden && bottomHidden) {
+            const matchNormal = (valT === p.top && valB === p.bottom);
+            const matchSwapped = (valT === p.bottom && valB === p.top);
+            if (!matchNormal && !matchSwapped) isAllCorrect = false;
+          } else {
+            if (topHidden && valT !== p.top) isAllCorrect = false;
+            if (bottomHidden && valB !== p.bottom) isAllCorrect = false;
+          }
+
+          if (leftHidden && valL !== p.left) isAllCorrect = false;
+          if (rightHidden && valR !== p.right) isAllCorrect = false;
+
+          setChallengeStats(prev => {
+            const nextStreak = isAllCorrect ? prev.streak + 1 : 0;
+            return {
+              correct: prev.correct + (isAllCorrect ? 1 : 0),
+              total: prev.total + 1,
+              streak: nextStreak,
+              bestStreak: Math.max(prev.bestStreak, nextStreak)
+            };
+          });
+
+        } else {
+          isAllCorrect = checkFactoringAnswer(factoringUserAns, [p.top, p.bottom]);
+
+          setFactoringStats(prev => {
+            const nextStreak = isAllCorrect ? prev.streak + 1 : 0;
+            return {
+              correct: prev.correct + (isAllCorrect ? 1 : 0),
+              total: prev.total + 1,
+              streak: nextStreak,
+              bestStreak: Math.max(prev.bestStreak, nextStreak)
+            };
+          });
+        }
+
+        setChallengeShowResult(true);
+
+        if (isAllCorrect) {
+          triggerSound('success');
+          setTriggerConfetti(prev => prev + 1);
+        } else {
+          triggerSound('error');
+        }
+      };
+
+      // --- TAB 4 Actions ---
+      const calculateFactoring = (aStr, bStr) => {
+        const sum = parseInt(aStr);
+        const prod = parseInt(bStr);
+
+        if (isNaN(sum) || isNaN(prod)) {
+          setCalcResult({ error: '請輸入有效的整數！' });
+          return;
+        }
+
+        const d = sum * sum - 4 * prod;
+        if (d < 0) {
+          setCalcResult({
+            solved: false,
+            sum,
+            prod,
+            reason: '判別式為負數 ($D = b^2 - 4ac < 0$)，在實數範圍內無解，更無整數解。'
+          });
+          return;
+        }
+
+        const sRoot = Math.sqrt(d);
+        if (Math.round(sRoot) * Math.round(sRoot) !== d) {
+          setCalcResult({
+            solved: false,
+            sum,
+            prod,
+            reason: '無整數解。這意味著此二次式無法以「整數」進行十字交乘因式分解（可用配方法或公式解）。'
+          });
+          return;
+        }
+
+        const t1 = (sum + sRoot) / 2;
+        const t2 = (sum - sRoot) / 2;
+
+        if (Number.isInteger(t1) && Number.isInteger(t2)) {
+          setCalcResult({
+            solved: true,
+            top: t1,
+            bottom: t2,
+            left: sum,
+            right: prod
+          });
+          // Removed automatic beep sound on keypress here to avoid noise in calculator tab
+        } else {
+          setCalcResult({
+            solved: false,
+            sum,
+            prod,
+            reason: '雖然判別式為完全平方數，但因分解根不是整數，故無法使用整數十字分解法。'
+          });
+        }
+      };
+
+      useEffect(() => {
+        if (activeTab === 'calculator') {
+          calculateFactoring(calcA, calcB);
+        }
+      }, [calcA, calcB, activeTab]);
+
+      return (
+        <div className="relative min-h-screen pb-16">
+          <ConfettiEffect trigger={triggerConfetti} />
+
+          {/* Floating Navigation / Title Banner */}
+          <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 text-white py-4 px-6 sticky top-0 z-40 shadow-md">
+            <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-indigo-500 text-white p-2 rounded-xl shadow-lg shadow-indigo-500/30">
+                  <Icon name="Grid" className="w-6 h-6 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-black tracking-wider flex items-center gap-2">
+                    數字猜猜樂 <span className="text-xs bg-indigo-500/30 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded-full font-normal">十字交乘與因式分解</span>
+                  </h1>
+                  <p className="text-xs text-indigo-200/80">
+                    國中數學八年級上學期 · 搭配因式分解法 · <span className="italic text-yellow-300 font-medium">李芷維老師原創 / 卷-1 經典</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Navigation Options */}
+              <div className="flex items-center gap-2 overflow-x-auto w-full lg:w-auto pb-1 lg:pb-0 custom-scrollbar">
+                <button
+                  onClick={() => { triggerSound('click'); setActiveTab('sheet'); }}
+                  className={`px-3 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all duration-200 shrink-0
+                    ${activeTab === 'sheet' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                >
+                  <Icon name="FileText" className="w-4 h-4" /> 經典數字猜猜樂
+                </button>
+                <button
+                  onClick={() => { triggerSound('click'); setActiveTab('writtenSheet'); }}
+                  className={`px-3 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all duration-200 shrink-0
+                    ${activeTab === 'writtenSheet' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                >
+                  <Icon name="Award" className="w-4 h-4" /> 二次式因式分解(卷-1)
+                </button>
+                <button
+                  onClick={() => { triggerSound('click'); setActiveTab('challenge'); }}
+                  className={`px-3 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all duration-200 shrink-0
+                    ${activeTab === 'challenge' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                >
+                  <Icon name="Gamepad2" className="w-4 h-4" /> 無限挑戰模式
+                </button>
+                <button
+                  onClick={() => { triggerSound('click'); setActiveTab('calculator'); }}
+                  className={`px-3 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all duration-200 shrink-0
+                    ${activeTab === 'calculator' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                >
+                  <Icon name="Calculator" className="w-4 h-4" /> 十字交乘計算機
+                </button>
+                <button
+                  onClick={() => { triggerSound('click'); setActiveTab('tutorial'); }}
+                  className={`px-3 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 transition-all duration-200 shrink-0
+                    ${activeTab === 'tutorial' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                >
+                  <Icon name="BookOpen" className="w-4 h-4" /> 十字法教學
+                </button>
+              </div>
+
+              {/* Setting controls */}
+              <button
+                onClick={() => { setSoundOn(!soundOn); triggerSound('click'); }}
+                className={`p-2 rounded-xl transition-all duration-200 hidden lg:block
+                  ${soundOn ? 'bg-emerald-50/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}
+                title={soundOn ? "關閉音效" : "開啟音效"}
+              >
+                <Icon name={soundOn ? "Volume2" : "VolumeX"} className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="max-w-7xl mx-auto px-4 mt-8">
+            {/* ==================== STUDENT INFO BAR (GLOBAL) ==================== */}
+            <div className="bg-white rounded-2xl p-4 mb-6 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="text-slate-600 font-bold text-sm flex items-center gap-2">
+                <Icon name="UserCheck" className="w-5 h-5 text-indigo-500" />
+                請先填寫基本資料，完成後答案將記錄在成績卷中：
+              </div>
+              <div className="grid grid-cols-3 gap-3 w-full md:w-auto">
+                <input
+                  type="text"
+                  placeholder="班級 (如：八甲)"
+                  value={studentClass}
+                  onChange={(e) => setStudentClass(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-semibold focus:outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                />
+                <input
+                  type="text"
+                  placeholder="座號"
+                  value={studentSeat}
+                  onChange={(e) => setStudentSeat(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-semibold focus:outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                />
+                <input
+                  type="text"
+                  placeholder="姓名"
+                  value={studentName}
+                  onChange={(e) => setStudentName(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-semibold focus:outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                />
+              </div>
+            </div>
+
+            {/* ==================== TAB 1: CLASSIC WORKSHEET ==================== */}
+            {activeTab === 'sheet' && (
+              <div className="space-y-6">
+                {/* Paper Header Styling */}
+                <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+                  
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                          經典數字猜猜樂
+                        </span>
+                        <span className="text-slate-400 text-xs font-medium">題目卷編號：0</span>
+                      </div>
+                      <h2 className="text-2xl sm:text-3xl font-black text-slate-800">【數字猜猜樂】搭配八上十字分解法</h2>
+                      <p className="text-slate-500 text-sm max-w-2xl leading-relaxed">
+                        <strong className="text-indigo-600 font-bold">規則說明：</strong>
+                        上下數字相加為左邊的數字，相乘為右邊的數字。試著挑戰看看，將空格處填入正確整數吧！
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Score Summary Banner */}
+                {showSheetResults && (
+                  <div className={`rounded-2xl p-6 border flex flex-col md:flex-row items-center justify-between gap-6 animate-fade-in-down
+                    ${sheetCompleted 
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                      : score >= 60 
+                        ? 'bg-amber-50 border-amber-200 text-amber-800' 
+                        : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+                    <div className="flex items-center gap-4">
+                      <div className={`p-4 rounded-2xl ${sheetCompleted ? 'bg-emerald-100' : score >= 60 ? 'bg-amber-100' : 'bg-rose-100'}`}>
+                        <Icon name={sheetCompleted ? "Trophy" : "Award"} className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold">
+                          {studentName ? `${studentClass}班 ${studentSeat}號 ${studentName} 的成績單` : '數字猜猜樂 批改完成'}
+                        </h3>
+                        <p className="text-sm opacity-90 mt-1">
+                          {sheetCompleted 
+                            ? '完全正確！太強了，你已經具備無敵的十字數感！' 
+                            : `獲得分數：${score} 分。寫錯的格子會亮起紅燈，點擊各題可以查看加減乘除詳細算式！`}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-4">
+                      <div className="text-center">
+                        <span className="text-5xl font-black block">{score}</span>
+                        <span className="text-xs font-bold tracking-widest opacity-80 uppercase">SCORE</span>
+                      </div>
+                      <button
+                        onClick={resetClassicSheet}
+                        className="bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm flex items-center gap-2 shrink-0"
+                      >
+                        <Icon name="RotateCcw" className="w-4 h-4" /> 重新作答
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Problems Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {CLASSIC_PROBLEMS.map(p => (
+                    <CrossItem
+                      key={p.id}
+                      id={p.id}
+                      top={p.top}
+                      bottom={p.bottom}
+                      left={p.left}
+                      right={p.right}
+                      given={p.given}
+                      userAnswers={sheetAnswers}
+                      onAnswerChange={handleSheetAnswerChange}
+                      showResults={showSheetResults}
+                    />
+                  ))}
+                </div>
+
+                {/* Submit Action Bar */}
+                {!showSheetResults && (
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 text-slate-500">
+                      <Icon name="Info" className="w-5 h-5 text-indigo-500" />
+                      <span className="text-sm">完成全部 8 題後，點擊提交進行自動批改。</span>
+                    </div>
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <button
+                        onClick={() => {
+                          const mockAnswers = {};
+                          CLASSIC_PROBLEMS.forEach(p => {
+                            ['top', 'bottom', 'left', 'right'].forEach(f => {
+                              if (!p.given.includes(f)) {
+                                mockAnswers[`${p.id}_${f}`] = p[f];
+                              }
+                            });
+                          });
+                          setSheetAnswers(mockAnswers);
+                          triggerSound('success');
+                        }}
+                        className="text-slate-300 hover:text-slate-400 text-xs px-2 py-1"
+                        title="教師端快速解答填充"
+                      >
+                        解答填充
+                      </button>
+                      
+                      <button
+                        onClick={checkClassicSheet}
+                        className="flex-1 sm:flex-initial bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold px-8 py-3.5 rounded-2xl shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/30 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Icon name="CheckSquare" className="w-5 h-5" /> 提交考卷批改
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ==================== TAB 2: ALGEBRAIC WRITTEN SHEET ==================== */}
+            {activeTab === 'writtenSheet' && (
+              <div className="space-y-8">
+                {/* Visual Concept Guide Box */}
+                <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-teal-400 to-indigo-500"></div>
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <span className="bg-teal-100 text-teal-800 text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        核心因式分解觀念
+                      </span>
+                      <h2 className="text-2xl sm:text-3xl font-black text-slate-800 mt-2">第二部分：從常數和與積推導因式</h2>
+                      <p className="text-slate-500 text-sm mt-1">
+                        在二次多項式 $x^2 + bx + c$ 中，我們要尋找兩個常數 $p$ 與 $q$，使它們滿足：
+                        <strong className="text-teal-600 font-bold ml-1">相加等於一次項係數 $b$（左），相乘等於常數項 $c$（右）</strong>。
+                        這樣我們就能將多項式因式分解成 $(x + p)(x + q)$！
+                      </p>
+                    </div>
+
+                    {/* Interactive Guided Example: x^2 - 3x - 4 */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+                      <h3 className="text-base font-black text-slate-700 flex items-center gap-2 mb-4">
+                        <span className="bg-teal-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">例</span>
+                        互動範例示範：分解多項式 $x^2 - 3x - 4$
+                      </h3>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                        {/* Example Steps Column */}
+                        <div className="lg:col-span-7 space-y-4">
+                          <div className="text-sm text-slate-600 space-y-2">
+                            <p className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                              一次項係數（和）為 <span className="font-bold text-indigo-600">-3</span>
+                            </p>
+                            <p className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-violet-500"></span>
+                              常數項（積）為 <span className="font-bold text-violet-600">-4</span>
+                            </p>
+                          </div>
+                          
+                          <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">請在右方十字架中輸入兩個神秘數字：</span>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <input
+                                type="text"
+                                placeholder="數字一"
+                                value={exampleAnswers.top}
+                                onChange={(e) => {
+                                  setExampleAnswers({ ...exampleAnswers, top: e.target.value });
+                                  setExampleStatus(null); // Reset warning instantly on keypress
+                                }}
+                                className="w-20 px-2 py-1.5 text-center border rounded-lg font-bold focus:outline-none focus:border-teal-500 text-sm"
+                              />
+                              <span className="text-slate-400 font-black">+</span>
+                              <input
+                                type="text"
+                                placeholder="數字二"
+                                value={exampleAnswers.bottom}
+                                onChange={(e) => {
+                                  setExampleAnswers({ ...exampleAnswers, bottom: e.target.value });
+                                  setExampleStatus(null); // Reset warning instantly on keypress
+                                }}
+                                className="w-20 px-2 py-1.5 text-center border rounded-lg font-bold focus:outline-none focus:border-teal-500 text-sm"
+                              />
+                              <button
+                                onClick={checkExample}
+                                className="bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs px-4 py-2 rounded-lg transition-all shadow-sm"
+                              >
+                                驗證配對
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Dynamic Feedback on Example */}
+                          {exampleStatus === 'correct' && (
+                            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-xl text-sm flex items-center gap-2 animate-bounce">
+                              <Icon name="Smile" className="w-5 h-5 text-emerald-600 shrink-0" />
+                              <div>
+                                <strong>太棒了！</strong> 兩數相加 $1 + (-4) = -3$，相乘 $1 \times (-4) = -4$。
+                                <div className="font-bold mt-1 text-teal-700">故：$x^2 - 3x - 4$ 完美分解為 $(x + 1)(x - 4)$！</div>
+                              </div>
+                            </div>
+                          )}
+                          {exampleStatus === 'incorrect' && (
+                            <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-xl text-sm flex items-center gap-2">
+                              <Icon name="AlertTriangle" className="w-5 h-5 text-rose-600 shrink-0" />
+                              <span>配對不太對喔！提示：這兩個整數的乘積是 $-4$，且其中一個是正數、一個是負數。</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Visual Cross Column */}
+                        <div className="lg:col-span-5 flex justify-center">
+                          <div className="w-56 scale-90">
+                            <CrossItem
+                              id="EXAMPLE"
+                              top={1}
+                              bottom={-4}
+                              left={-3}
+                              right={-4}
+                              given={['left', 'right']}
+                              userAnswers={exampleAnswers}
+                              onAnswerChange={(id, field, value) => {
+                                setExampleAnswers(prev => ({ ...prev, [field]: value }));
+                                setExampleStatus(null);
+                              }}
+                              showResults={exampleStatus !== null} // Only show validation borders and overlays after clicking verify
+                              interactive={exampleStatus !== 'correct'}
+                              isHighlighted={true}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Main Written Practice (Capto_Capture 12859: 十字分解練習 卷-1) */}
+                <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+                  <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-100 pb-4 gap-4">
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <Icon name="FileEdit" className="text-indigo-600" />
+                        十字分解練習 (卷-1)
+                      </h2>
+                      <p className="text-xs text-slate-400 mt-1">請在「答：」輸入框中寫下您因式分解後的算式（例如：(x+4)(x-9)）</p>
+                    </div>
+                    <span className="text-xs bg-slate-100 text-slate-500 border px-3 py-1 rounded-full font-medium">試卷總分: 100 分</span>
+                  </div>
+
+                  {/* Written Score Display */}
+                  {showWrittenResults && (
+                    <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in
+                      ${writtenCompleted ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+                      <div className="flex items-center gap-3">
+                        <Icon name={writtenCompleted ? "Trophy" : "Award"} className="w-6 h-6" />
+                        <div>
+                          <div className="font-bold">您的卷-1 批改成績：{writtenScore} 分</div>
+                          <p className="text-xs opacity-90 mt-0.5">
+                            {writtenCompleted ? '完美的分解表現！你已經完全學會了十字交乘因式分解！' : '有些多項式因式分解寫錯囉，可以對照參考正確公式。'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={resetWrittenSheet}
+                        className="bg-white hover:bg-slate-100 text-slate-800 border px-4 py-2 rounded-lg text-xs font-bold transition-all shrink-0"
+                      >
+                        重考一次
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 5 Problems Rows */}
+                  <div className="space-y-4">
+                    {WRITTEN_PROBLEMS.map(p => {
+                      const userVal = writtenAnswers[p.id] || '';
+                      const isCorrectVal = showWrittenResults ? checkFactoringAnswer(userVal, p.roots) : null;
+                      
+                      return (
+                        <div key={p.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6 transition-all hover:bg-white hover:shadow-sm">
+                          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                            {/* Left: Equation */}
+                            <div className="flex items-center gap-4">
+                              <span className="bg-slate-200/80 text-slate-700 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
+                                ({p.id})
+                              </span>
+                              <div>
+                                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">多項式多項式</div>
+                                <span className="text-xl font-bold text-slate-800 italic">x² {p.displayPoly.slice(3)}</span>
+                              </div>
+                            </div>
+
+                            {/* Middle: Answer Box */}
+                            <div className="flex-1 max-w-sm w-full flex items-center gap-3">
+                              <span className="text-sm font-bold text-slate-500 shrink-0">答：</span>
+                              <div className="relative w-full">
+                                <input
+                                  type="text"
+                                  placeholder="格式：(x+a)(x+b)"
+                                  value={userVal}
+                                  onChange={(e) => {
+                                    setWrittenAnswers({ ...writtenAnswers, [p.id]: e.target.value });
+                                    if (showWrittenResults) setShowWrittenResults(false); // Reset warning state instantly when typing a new answer
+                                  }}
+                                  disabled={showWrittenResults && isCorrectVal}
+                                  className={`w-full px-4 py-2 rounded-xl border-2 font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-all text-center
+                                    ${showWrittenResults
+                                      ? isCorrectVal
+                                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                                        : 'border-rose-500 bg-rose-50 text-rose-800 animate-shake'
+                                      : 'border-slate-300 focus:border-indigo-500 bg-white'
+                                    }`}
+                                />
+                                {showWrittenResults && isCorrectVal && (
+                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-600 bg-emerald-100 rounded-full p-1 scale-75">
+                                    <Icon name="Check" className="w-4 h-4" />
+                                  </span>
+                                )}
+                                {showWrittenResults && !isCorrectVal && (
+                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-rose-600 bg-rose-100 rounded-full p-1 scale-75">
+                                    <Icon name="X" className="w-4 h-4" />
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Right: Helpers and hints */}
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  triggerSound('click');
+                                  setHintProblemId(hintProblemId === p.id ? null : p.id);
+                                }}
+                                className={`text-xs px-3 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 border
+                                  ${hintProblemId === p.id 
+                                    ? 'bg-amber-100 border-amber-200 text-amber-800' 
+                                    : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-600'}`}
+                              >
+                                <Icon name="Lightbulb" className="w-3.5 h-3.5" />
+                                {hintProblemId === p.id ? '隱藏提示' : '💡 顯示十字提示'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Interactive Hint Cross */}
+                          {hintProblemId === p.id && (
+                            <div className="mt-4 pt-4 border-t border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in bg-amber-50/40 p-4 rounded-xl">
+                              <div className="space-y-1">
+                                <h4 className="font-bold text-amber-900 text-sm flex items-center gap-1">
+                                  <span>💡 十字提示：</span>
+                                </h4>
+                                <p className="text-xs text-slate-500 leading-relaxed max-w-md">
+                                  我們需要尋找兩個常數（上、下），使它們相加為一次項係數（左 = <span className="font-bold text-indigo-600">{p.hintSum}</span>），
+                                  相乘等於常數項（右 = <span className="font-bold text-violet-600">{p.hintProd}</span>）。
+                                </p>
+                              </div>
+
+                              <div className="w-48 scale-90 shrink-0">
+                                <CrossItem
+                                  id={`HINT_${p.id}`}
+                                  top={p.roots[0]}
+                                  bottom={p.roots[1]}
+                                  left={p.hintSum}
+                                  right={p.hintProd}
+                                  given={['left', 'right']}
+                                  interactive={false}
+                                  showResults={true} // Hint can directly display formula
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {showWrittenResults && (
+                            <div className="mt-3 pt-3 border-t border-dashed border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+                              <span>正確答案：<strong className="text-emerald-600">x² {p.displayPoly.slice(3)} = (x {p.roots[0] >= 0 ? `+ ${p.roots[0]}` : p.roots[0]})(x {p.roots[1] >= 0 ? `+ ${p.roots[1]}` : p.roots[1]})</strong></span>
+                              <span className="italic">和為 {p.hintSum}，積為 {p.hintProd}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {!showWrittenResults && (
+                    <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 text-slate-500">
+                        <Icon name="Info" className="w-5 h-5 text-indigo-500" />
+                        <span className="text-sm">完成上面五道題目的因式分解後，點擊提交進行自動閱卷。</span>
+                      </div>
+                      <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <button
+                          onClick={() => {
+                            const mockAnswers = {};
+                            WRITTEN_PROBLEMS.forEach(p => {
+                              const sign1 = p.roots[0] >= 0 ? '+' : '';
+                              const sign2 = p.roots[1] >= 0 ? '+' : '';
+                              mockAnswers[p.id] = `(x${sign1}${p.roots[0]})(x${sign2}${p.roots[1]})`;
+                            });
+                            setWrittenAnswers(mockAnswers);
+                            triggerSound('success');
+                          }}
+                          className="text-slate-300 hover:text-slate-400 text-xs px-2 py-1"
+                        >
+                          答案填充
+                        </button>
+                        <button
+                          onClick={checkWrittenSheetAnswers}
+                          className="flex-1 sm:flex-initial bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-850 text-white font-bold px-8 py-3.5 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
+                        >
+                          <Icon name="CheckSquare" className="w-5 h-5" /> 提交因式分解考卷
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ==================== TAB 3: INFINITE CHALLENGE ==================== */}
+            {activeTab === 'challenge' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Control Panel */}
+                <div className="space-y-6 lg:col-span-1">
+                  <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-6">
+                    <div>
+                      <h2 className="text-xl font-black text-slate-800">無限挑戰模式</h2>
+                      <p className="text-xs text-slate-400 mt-1">
+                        系統會自動生成無窮道全新考題，適合學生不間斷練習，建立神級直覺數感。
+                      </p>
+                    </div>
+
+                    {/* Mode Selector Tab */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block">選擇挑戰類型</label>
+                      <div className="flex rounded-xl bg-slate-100 p-1">
+                        <button
+                          onClick={() => {
+                            triggerSound('click');
+                            setChallengeType('number');
+                          }}
+                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5
+                            ${challengeType === 'number' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                          <Icon name="Binary" className="w-3.5 h-3.5" /> 數字猜猜樂
+                        </button>
+                        <button
+                          onClick={() => {
+                            triggerSound('click');
+                            setChallengeType('factoring');
+                          }}
+                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5
+                            ${challengeType === 'factoring' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                          <Icon name="Sigma" className="w-3.5 h-3.5" /> 十字交乘因式分解
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Stats based on Selected Mode */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                        <span className="text-slate-400 text-xs font-bold block uppercase">答對題數</span>
+                        <span className="text-2xl font-black text-slate-800 mt-1 block">
+                          {challengeType === 'number' ? challengeStats.correct : factoringStats.correct} 
+                          <span className="text-xs text-slate-400 font-normal"> / {challengeType === 'number' ? challengeStats.total : factoringStats.total}</span>
+                        </span>
+                      </div>
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center relative overflow-hidden">
+                        <span className="text-slate-400 text-xs font-bold block uppercase">連續答對</span>
+                        <span className="text-2xl font-black text-indigo-600 mt-1 block">
+                          {challengeType === 'number' ? challengeStats.streak : factoringStats.streak} <span className="text-xs text-slate-400 font-normal">次</span>
+                        </span>
+                        {(challengeType === 'number' ? challengeStats.streak : factoringStats.streak) > 0 && (
+                          <span className="absolute top-1 right-2 animate-bounce">🔥</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-indigo-800">
+                        <Icon name="Flame" className="w-5 h-5 text-indigo-600" />
+                        <span className="text-sm font-bold">該模式最高連勝</span>
+                      </div>
+                      <span className="text-lg font-black text-indigo-700">
+                        {challengeType === 'number' ? challengeStats.bestStreak : factoringStats.bestStreak} 關
+                      </span>
+                    </div>
+
+                    {/* Difficulty selector */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block">選擇挑戰難度</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: 'easy', label: '簡單', desc: '純正數' },
+                          { id: 'medium', label: '中等', desc: '含負數' },
+                          { id: 'hard', label: '困難', desc: '大數值' }
+                        ].map(diff => (
+                          <button
+                            key={diff.id}
+                            onClick={() => {
+                              triggerSound('click');
+                              setChallengeDifficulty(diff.id);
+                            }}
+                            className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-0.5
+                              ${challengeDifficulty === diff.id
+                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-md scale-105'
+                                : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'}`}
+                          >
+                            <span className="text-sm font-bold">{diff.label}</span>
+                            <span className={`text-[10px] ${challengeDifficulty === diff.id ? 'text-indigo-200' : 'text-slate-400'}`}>{diff.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <Icon name="Timer" className="w-4 h-4 text-slate-400" />
+                        <span className="text-sm">本題作答時間</span>
+                      </div>
+                      <span className="text-lg font-bold text-slate-700">{challengeTimer} 秒</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Challenge Playground Column */}
+                <div className="lg:col-span-2 space-y-6">
+                  {challengeProblem ? (
+                    <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6 relative">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-slate-500 flex items-center gap-1">
+                          <Icon name="Activity" className="w-4 h-4 text-indigo-500 animate-pulse" />
+                          挑戰進行中 ({challengeType === 'number' ? '數字模式' : '十字交乘模式'})
+                        </span>
+                        
+                        {challengeShowResult && (
+                          <div className={`px-4 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 animate-bounce
+                            ${(challengeType === 'number' ? challengeStats.streak : factoringStats.streak) > 0 
+                              ? 'bg-emerald-100 text-emerald-800' 
+                              : 'bg-rose-100 text-rose-800'}`}>
+                            <Icon name={(challengeType === 'number' ? challengeStats.streak : factoringStats.streak) > 0 ? "Smile" : "AlertTriangle"} className="w-3.5 h-3.5" />
+                            {(challengeType === 'number' ? challengeStats.streak : factoringStats.streak) > 0 ? '完全正確！太強了！' : '算錯了，再觀察看看。'}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* MODE 1: STANDARD NUMBER GUESSING */}
+                      {challengeType === 'number' && (
+                        <div className="flex justify-center py-4 animate-fade-in">
+                          <div className="w-full max-w-[320px]">
+                            <CrossItem
+                              id="CHALLENGE_NUM"
+                              top={challengeProblem.top}
+                              bottom={challengeProblem.bottom}
+                              left={challengeProblem.left}
+                              right={challengeProblem.right}
+                              given={challengeProblem.given}
+                              userAnswers={challengeAnswers}
+                              onAnswerChange={(id, field, value) => {
+                                setChallengeAnswers(prev => ({ ...prev, [field]: value }));
+                                if (challengeShowResult) setChallengeShowResult(false); // Reset feedback instantly on edit
+                              }}
+                              showResults={challengeShowResult} // Hide error highlights until "Verify" is clicked
+                              isHighlighted={true}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* MODE 2: ALGEBRAIC FACTORING */}
+                      {challengeType === 'factoring' && (
+                        <div className="space-y-6 animate-fade-in">
+                          {/* Beautiful big equation display */}
+                          <div className="text-center bg-slate-50 border border-slate-200 py-6 rounded-2xl shadow-inner relative overflow-hidden">
+                            <span className="text-xs font-bold text-slate-400 block tracking-widest uppercase mb-1">多項式方程式</span>
+                            <span className="text-3xl sm:text-4xl font-black italic text-teal-800 tracking-wide select-none">
+                              {formatPolynomial(challengeProblem.left, challengeProblem.right)}
+                            </span>
+                          </div>
+
+                          {/* Factoring Interface */}
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                            {/* Input details */}
+                            <div className="md:col-span-7 space-y-4">
+                              <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-xl text-sm space-y-1.5 text-slate-700">
+                                <p className="font-bold text-emerald-950 flex items-center gap-1">
+                                  <Icon name="Search" className="w-4 h-4 text-emerald-600" />
+                                  解題分析提示：
+                                </p>
+                                <p>1. 尋找兩個神秘整數，使其<strong className="text-indigo-600">相加 = {challengeProblem.left}</strong> (一次項係數)</p>
+                                <p>2. 且使其<strong className="text-violet-600">相乘 = {challengeProblem.right}</strong> (常數項)</p>
+                              </div>
+
+                              {/* Factored Answer Box */}
+                              <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-400 block uppercase">請寫下因式分解答案：</label>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-lg font-bold text-slate-500">答：</span>
+                                  <input
+                                    type="text"
+                                    placeholder="格式例如：(x+2)(x-3)"
+                                    value={factoringUserAns}
+                                    onChange={(e) => {
+                                      setFactoringUserAns(e.target.value);
+                                      if (challengeShowResult) setChallengeShowResult(false); // Reset warning instantly when editing final factoring equation
+                                    }}
+                                    disabled={challengeShowResult && checkFactoringAnswer(factoringUserAns, [challengeProblem.top, challengeProblem.bottom])}
+                                    className={`flex-1 px-4 py-3 rounded-xl border-2 font-bold text-lg focus:outline-none transition-all text-center
+                                      ${challengeShowResult
+                                        ? checkFactoringAnswer(factoringUserAns, [challengeProblem.top, challengeProblem.bottom])
+                                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                                          : 'border-rose-500 bg-rose-50 text-rose-800 animate-shake'
+                                        : 'border-slate-300 focus:border-teal-500 bg-white'
+                                      }`}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Live Interactive Scratchpad (Draft Cross) */}
+                            <div className="md:col-span-5 flex flex-col items-center">
+                              <span className="text-[11px] font-bold text-indigo-400 block mb-2">💡 互動草稿十字架 (點擊輸入協助計算)</span>
+                              <div className="w-full max-w-[200px] scale-95 origin-center">
+                                <CrossItem
+                                  id="FACTORING_DRAFT"
+                                  top={challengeProblem.top}
+                                  bottom={challengeProblem.bottom}
+                                  left={challengeProblem.left}
+                                  right={challengeProblem.right}
+                                  given={['left', 'right']}
+                                  userAnswers={factoringDraft}
+                                  onAnswerChange={(id, field, value) => {
+                                    setFactoringDraft(prev => ({ ...prev, [field]: value }));
+                                    // In factoring challenge, typing in scratchpad resets the final result indicator to let them try again comfortably
+                                    if (challengeShowResult) setChallengeShowResult(false);
+                                  }}
+                                  showResults={challengeShowResult} // ONLY show correctness borders/X overlays after clicking "Verify Answer"
+                                  isHighlighted={true}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Educational hints */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs text-slate-500 space-y-1">
+                        <div className="font-bold text-slate-700 flex items-center gap-1.5 mb-1">
+                          <Icon name="HelpCircle" className="w-4 h-4 text-indigo-500" /> 數字邏輯溫馨提醒：
+                        </div>
+                        {challengeType === 'number' ? (
+                          <p>加法：上 + 下 = 左 | 乘法：上 × 下 = 右。上下格子答案完全可以互相調換位置喔！</p>
+                        ) : (
+                          <p>利用右邊的草稿十字架填入數字，草稿區會幫您<b>自動進行即時配對計算</b>，直到出現 ✅ 代表配對成功！然後將配對帶入 $(x+a)(x+b)$ 格式即為最終答案！</p>
+                        )}
+                      </div>
+
+                      {/* Result Solutions Reveal */}
+                      {challengeShowResult && (
+                        <div className="mt-4 pt-4 border-t border-slate-100 text-sm text-slate-600 space-y-1.5 animate-fade-in">
+                          <p className="font-bold flex items-center gap-1.5 text-slate-700">
+                            <Icon name="Award" className="w-4 h-4 text-amber-500" />
+                            本題正確解答拆解：
+                          </p>
+                          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 font-medium space-y-1 text-xs">
+                            <p>兩個常數分別是：<strong className="text-teal-600 text-sm">{challengeProblem.top}</strong> 與 <strong className="text-teal-600 text-sm">{challengeProblem.bottom}</strong></p>
+                            <p>算式檢驗：{challengeProblem.top} + ({challengeProblem.bottom}) = {challengeProblem.left}（一次項和） | {challengeProblem.top} × ({challengeProblem.bottom}) = {challengeProblem.right}（常數項積）</p>
+                            <p className="text-sm font-bold text-indigo-600 mt-1">因式分解答案：(x {challengeProblem.top >= 0 ? `+ ${challengeProblem.top}` : challengeProblem.top})(x {challengeProblem.bottom >= 0 ? `+ ${challengeProblem.bottom}` : challengeProblem.bottom})</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Submit & Next Buttons */}
+                      <div className="flex items-center gap-4 pt-2">
+                        {challengeShowResult ? (
+                          <button
+                            onClick={() => {
+                              triggerSound('click');
+                              generateChallenge(challengeType, challengeDifficulty);
+                            }}
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
+                          >
+                            下一題挑戰 <Icon name="ArrowRight" className="w-5 h-5" />
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-3 w-full">
+                            <button
+                              onClick={() => {
+                                triggerSound('click');
+                                generateChallenge(challengeType, challengeDifficulty);
+                              }}
+                              className="px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl border border-slate-200 transition-all"
+                            >
+                              跳過此題
+                            </button>
+                            <button
+                              onClick={submitChallenge}
+                              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
+                            >
+                              驗證答案 <Icon name="CheckCircle2" className="w-5 h-5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <span className="loading text-slate-400">正在準備題目中...</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ==================== TAB 4: CROSS FACTORING CALCULATOR ==================== */}
+            {activeTab === 'calculator' && (
+              <div className="max-w-4xl mx-auto space-y-8">
+                <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-800">十字交乘法動態計算機</h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                      輸入您在作業中遇到的多項式係數，系統會立即展示其「十字分解」架構圖並給出完美因式！
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 flex flex-col md:flex-row items-center justify-center gap-4 text-center">
+                    <span className="text-2xl font-black text-slate-600">x²</span>
+                    <span className="text-2xl font-black text-slate-400">+</span>
+                    
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={calcA}
+                          onChange={(e) => setCalcA(e.target.value)}
+                          className="w-24 h-12 text-center text-xl font-bold rounded-xl border-2 border-slate-300 hover:border-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
+                        />
+                        <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-indigo-500 uppercase tracking-wider">相加(和)</span>
+                      </div>
+                    </div>
+                    
+                    <span className="text-2xl font-black text-slate-600 ml-1">x</span>
+                    <span className="text-2xl font-black text-slate-400">+</span>
+
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={calcB}
+                          onChange={(e) => setCalcB(e.target.value)}
+                          className="w-24 h-12 text-center text-xl font-bold rounded-xl border-2 border-slate-300 hover:border-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition-all"
+                        />
+                        <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-violet-500 uppercase tracking-wider">相乘(積)</span>
+                      </div>
+                    </div>
+
+                    <span className="text-2xl font-black text-slate-400 md:ml-4">=</span>
+                    <span className="text-2xl font-black text-indigo-600">0</span>
+                  </div>
+
+                  {calcResult && (
+                    <div className="pt-6 border-t border-slate-100 animate-fade-in">
+                      {calcResult.error ? (
+                        <div className="bg-rose-50 border border-rose-100 text-rose-700 p-4 rounded-xl text-center font-bold">
+                          {calcResult.error}
+                        </div>
+                      ) : calcResult.solved ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                          <div className="flex justify-center">
+                            <div className="w-full max-w-[280px]">
+                              <CrossItem
+                                id="CALC"
+                                top={calcResult.top}
+                                bottom={calcResult.bottom}
+                                left={calcResult.left}
+                                right={calcResult.right}
+                                given={['top', 'bottom', 'left', 'right']} 
+                                interactive={false}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <h3 className="text-lg font-black text-indigo-950 flex items-center gap-2">
+                              <Icon name="Lightbulb" className="w-5 h-5 text-amber-500" />
+                              因式分解解析
+                            </h3>
+                            
+                            <div className="space-y-3 text-slate-600 text-sm">
+                              <p>
+                                我們的任務是尋找兩個整數，滿足：
+                              </p>
+                              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1.5 font-medium">
+                                <p className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                                  兩數相加等於 <span className="font-bold text-indigo-600">{calcResult.left}</span> (x 的係數)
+                                </p>
+                                <p className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-violet-500"></span>
+                                  兩數相乘等於 <span className="font-bold text-violet-600">{calcResult.right}</span> (常數項)
+                                </p>
+                              </div>
+                              <p>
+                                經過尋找，這兩個整數為：
+                                <strong className="text-indigo-600 ml-1">{calcResult.top}</strong> 與 
+                                <strong className="text-violet-600 ml-1">{calcResult.bottom}</strong>。
+                              </p>
+                              <p className="text-base text-slate-800">
+                                故原二次多項式可以完美分解為：
+                              </p>
+                              <div className="bg-indigo-600 text-white p-4 rounded-xl text-center text-xl font-black shadow-md tracking-wide">
+                                x² {calcResult.left >= 0 ? `+ ${calcResult.left}` : calcResult.left}x {calcResult.right >= 0 ? `+ ${calcResult.right}` : calcResult.right} 
+                                <span className="block text-sm text-indigo-200 mt-1 font-normal">可以分解成</span>
+                                (x {calcResult.top >= 0 ? `+ ${calcResult.top}` : calcResult.top}) 
+                                (x {calcResult.bottom >= 0 ? `+ ${calcResult.bottom}` : calcResult.bottom})
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-amber-900 space-y-4">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 bg-amber-100 rounded-lg text-amber-700">
+                              <Icon name="AlertTriangle" className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h4 className="font-black text-base">此二次式在「整數」範圍內無解</h4>
+                              <p className="text-sm mt-1 opacity-90">
+                                無法找到一組整數 $p$ 與 $q$ 同時符合 $p + q = {calcResult.sum}$ 且 $p \times q = {calcResult.prod}$。
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-xs text-amber-800/80 leading-relaxed pl-11">
+                            <p className="font-semibold mb-1">補充說明：</p>
+                            {calcResult.reason}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ==================== TAB 5: EDUCATIONAL TUTORIAL ==================== */}
+            {activeTab === 'tutorial' && (
+              <div className="max-w-4xl mx-auto space-y-8">
+                <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+                  <div className="space-y-2">
+                    <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-1 rounded-full uppercase">
+                      觀念解說
+                    </span>
+                    <h2 className="text-2xl font-black text-slate-800">十字分解法與十字十字「數字猜猜樂」的祕密</h2>
+                    <p className="text-slate-500 text-sm leading-relaxed">
+                      為什麼這個十字交叉圖形對於國中數學的二次式因式分解如此重要？讓我們用最直觀的方式，一步步解開它的祕密。
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center border-t border-slate-100 pt-6">
+                    <div className="md:col-span-1 bg-indigo-50 p-5 rounded-2xl border border-indigo-100 text-center space-y-2">
+                      <span className="text-xs font-black text-indigo-500 uppercase tracking-widest block">第一階段</span>
+                      <h3 className="font-bold text-lg text-indigo-950">多項式乘法展開</h3>
+                      <div className="text-sm font-semibold text-indigo-700 py-1 bg-white rounded-lg shadow-inner">
+                        (x + a)(x + b)
+                      </div>
+                    </div>
+                    <div className="md:col-span-2 text-slate-600 text-sm space-y-2">
+                      <p>
+                        當我們計算兩個一次式的乘積時，會使用分配律將它們展開：
+                      </p>
+                      <div className="bg-slate-50 px-4 py-2 rounded-lg font-mono text-center text-slate-800 border">
+                        (x + a)(x + b) = x² + ax + bx + ab
+                      </div>
+                      <p>
+                        將同類項合併之後，我們會得到：
+                        <strong className="text-indigo-600 ml-1">x² + (a + b)x + ab</strong>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center border-t border-slate-100 pt-6">
+                    <div className="md:col-span-1 bg-violet-50 p-5 rounded-2xl border border-violet-100 text-center space-y-2">
+                      <span className="text-xs font-black text-violet-500 uppercase tracking-widest block">第二階段</span>
+                      <h3 className="font-bold text-lg text-violet-950">觀察係數的關係</h3>
+                      <div className="text-sm font-semibold text-violet-700 py-1 bg-white rounded-lg shadow-inner">
+                        a + b ＆ a × b
+                      </div>
+                    </div>
+                    <div className="md:col-span-2 text-slate-600 text-sm space-y-2">
+                      <p>
+                        仔細觀察這個二次多項式：
+                        <strong className="text-slate-800 ml-1">x² + <span className="text-indigo-600 font-bold">Sum</span> x + <span className="text-violet-600 font-bold">Product</span></strong>
+                      </p>
+                      <ul className="list-disc pl-5 space-y-1 text-slate-500">
+                        <li>第一項 <span className="font-bold text-slate-700">x 的前係數</span> 就是 $a$ 與 $b$ 的<span className="text-indigo-600 font-bold">「和」</span>(也就是十字架左邊的數字)。</li>
+                        <li>最後一項 <span className="font-bold text-slate-700">常數項</span> 就是 $a$ 與 $b$ 的<span className="text-violet-600 font-bold">「積」</span>(也就是十字架右邊的數字)。</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center border-t border-slate-100 pt-6">
+                    <div className="md:col-span-1 bg-emerald-50 p-5 rounded-2xl border border-emerald-100 text-center space-y-2">
+                      <span className="text-xs font-black text-emerald-500 uppercase tracking-widest block">第三階段</span>
+                      <h3 className="font-bold text-lg text-emerald-950">反向工程：十字分解</h3>
+                      <div className="text-sm font-semibold text-emerald-700 py-1 bg-white rounded-lg shadow-inner">
+                        和在左，積在右
+                      </div>
+                    </div>
+                    <div className="md:col-span-2 text-slate-600 text-sm space-y-2">
+                      <p>
+                        「因式分解」就是乘法展開的「逆向操作」。當看到一個一元二次方程式，我們要找到那兩個神秘的整數 $a$ 與 $b$：
+                      </p>
+                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex justify-center items-center gap-6 text-xs sm:text-sm">
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> 相加：a + b</span>
+                        <span className="text-slate-300">|</span>
+                        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-violet-500"></span> 相乘：a × b</span>
+                      </div>
+                      <p>
+                        這就是為什麼這個數字猜猜樂練習，可以大幅提升你的「數感」與「對數字拆解的直覺」，這正是學好十字交乘法最關鍵的能力！
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Render the App
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
