@@ -2525,7 +2525,8 @@
               );
 
               return (
-                <div className="space-y-4 w-full">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start w-full">
+                <div className="space-y-4 min-w-0">
                   {/* Intro Card */}
                   <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm relative overflow-hidden">
                     <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-cyan-400 to-blue-500"></div>
@@ -2558,6 +2559,8 @@
                     </div>
                   </div>
 
+                  </div>
+                <div className="space-y-4 min-w-0">
                   {/* Simplified Version Explanation */}
                   <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
                     <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
@@ -2692,6 +2695,8 @@
                     </div>
                   </div>
 
+                  </div>
+                <div className="space-y-4 min-w-0">
                   {/* Interactive Practice */}
                   <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
                     <div className="flex items-center justify-between flex-wrap gap-2">
@@ -2766,6 +2771,7 @@
                       </button>
                     )}
                   </div>
+                  </div>
                 </div>
               );
             })()}
@@ -2817,7 +2823,8 @@
               );
 
               return (
-                <div className="space-y-4 w-full">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start w-full">
+                <div className="space-y-4 min-w-0">
                   {/* Intro Card */}
                   <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm relative overflow-hidden">
                     <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-fuchsia-400 to-rose-500"></div>
@@ -2852,6 +2859,8 @@
                     </div>
                   </div>
 
+                  </div>
+                <div className="space-y-4 min-w-0">
                   {/* 新示範：(x+2)(3x-1)，比照雙十字交乘填空方式，按鈕觸發依①~⑦順序展示 */}
                   <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
                     <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
@@ -2989,6 +2998,8 @@
                     </div>
                   </div>
 
+                  </div>
+                <div className="space-y-4 min-w-0">
                   {/* Interactive Practice */}
                   <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
                     <div className="flex items-center justify-between flex-wrap gap-2">
@@ -3160,6 +3171,7 @@
                         <Icon name="CheckSquare" className="w-5 h-5" /> 檢查答案
                       </button>
                     )}
+                  </div>
                   </div>
                 </div>
               );
