@@ -469,7 +469,7 @@
         { key: 'serverTime', label: '時間' },
         { key: 'studentClass', label: '班級' },
         { key: 'studentSeat', label: '座號' },
-        { key: 'studentName', label: '姓名' },
+        { key: 'studentName', label: '代號' },
         { key: 'tab', label: '分頁' },
         { key: 'score', label: '分數' }
       ];
@@ -856,6 +856,7 @@
 
       // --- Student General Info ---
       const [studentName, setStudentName] = useState('');
+      const [teacherCardFilter, setTeacherCardFilter] = useState('all');
       const [studentClass, setStudentClass] = useState('');
       const [studentSeat, setStudentSeat] = useState('');
       const [studentInfoConfirmed, setStudentInfoConfirmed] = useState(false);
@@ -1593,10 +1594,10 @@
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">姓名</label>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">代號(不必填真實姓名)</label>
                   <input
                     type="text"
-                    placeholder="例如：王小明"
+                    placeholder="例如：A01、小熊、星星(自訂代號即可)"
                     value={studentName}
                     onChange={(e) => setStudentName(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && canStart) setStudentInfoConfirmed(true); }}
@@ -1612,7 +1613,7 @@
                 <Icon name="ArrowRight" className="w-4 h-4" /> 送出，開始作答
               </button>
               {!canStart && (
-                <p className="text-xs text-center text-amber-500 -mt-3">請完整填寫班級、座號、姓名後才能開始</p>
+                <p className="text-xs text-center text-amber-500 -mt-3">請完整填寫班級、座號、代號後才能開始</p>
               )}
               <button
                 onClick={() => { setStudentInfoConfirmed(true); setActiveTab('teacher'); }}
@@ -3695,6 +3696,48 @@
                     }))
                     .filter(g => g.items.length > 0);
 
+                  // ===== 學生圖卡資料：每位學生一張卡，以燈號顯示學習狀態 =====
+                  const nowMs = Date.now();
+                  const toMs = (v) => (v ? new Date(v).getTime() || 0 : 0);
+                  const studentMap = {};
+                  filteredRecords.forEach(r => {
+                    const key = `${r.studentClass || '?'}|${r.studentSeat || '?'}|${r.studentName || ''}`;
+                    if (!studentMap[key]) studentMap[key] = { key, cls: r.studentClass, seat: r.studentSeat, code: r.studentName, recs: [] };
+                    studentMap[key].recs.push(r);
+                  });
+                  const statusRank = { alert: 0, ok: 1, good: 2 };
+                  const students = Object.values(studentMap).map(st => {
+                    st.recs.sort((a, b) => toMs(a.serverTime) - toMs(b.serverTime));
+                    const last = st.recs[st.recs.length - 1];
+                    const prev = [...st.recs].slice(0, -1).reverse().find(x => (x.tab || '') === (last.tab || '')) || null; // 只和「同一分頁」的上一次比較
+                    const lastScore = Number(last.score) || 0;
+                    const prevScore = prev ? (Number(prev.score) || 0) : null;
+                    const bestScore = Math.max(...st.recs.map(x => Number(x.score) || 0));
+                    const lastMs = toMs(last.serverTime);
+                    const ageMin = lastMs ? (nowMs - lastMs) / 60000 : Infinity;
+                    const status = lastScore >= 80 ? 'good' : lastScore >= 60 ? 'ok' : 'alert';
+                    const trend = prev === null ? 'new' : lastScore > prevScore ? 'up' : lastScore < prevScore ? 'down' : 'flat';
+                    const byTab = {};
+                    st.recs.forEach(x => {
+                      const t = x.tab || '其他';
+                      const sc = Number(x.score) || 0;
+                      if (!byTab[t]) byTab[t] = { tab: t, best: sc, last: sc, count: 0 };
+                      byTab[t].best = Math.max(byTab[t].best, sc);
+                      byTab[t].last = sc;
+                      byTab[t].count++;
+                    });
+                    return { ...st, lastScore, bestScore, lastMs, ageMin, status, trend, attempts: st.recs.length, tabs: Object.values(byTab), perfect: bestScore >= 100 };
+                  }).sort((a, b) => statusRank[a.status] - statusRank[b.status] || b.lastMs - a.lastMs);
+                  const statusCount = { good: 0, ok: 0, alert: 0 };
+                  students.forEach(st => { statusCount[st.status]++; });
+                  const visibleStudents = teacherCardFilter === 'all' ? students : students.filter(st => st.status === teacherCardFilter);
+                  const statusStyle = {
+                    good:  { label: '表現佳', lamp: 'bg-emerald-500', ring: 'ring-emerald-200', border: 'border-emerald-200', bar: 'bg-emerald-500', text: 'text-emerald-600', soft: 'bg-emerald-50', icon: 'CheckCircle2' },
+                    ok:    { label: '加油中', lamp: 'bg-amber-400',   ring: 'ring-amber-200',   border: 'border-amber-200',   bar: 'bg-amber-400',   text: 'text-amber-600',   soft: 'bg-amber-50',   icon: 'Clock' },
+                    alert: { label: '需關注', lamp: 'bg-rose-500',    ring: 'ring-rose-200',    border: 'border-rose-300',    bar: 'bg-rose-500',    text: 'text-rose-600',    soft: 'bg-rose-50',    icon: 'AlertTriangle' }
+                  };
+                  const timeAgo = (st) => !st.lastMs ? '-' : st.ageMin < 1 ? '剛剛' : st.ageMin < 60 ? `${Math.floor(st.ageMin)} 分鐘前` : new Date(st.lastMs).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+
                   return (
                     <div className="space-y-6">
                       {/* Header / Controls */}
@@ -3740,19 +3783,23 @@
                         </div>
                       )}
 
-                      {/* Summary Stats */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center">
-                          <span className="text-slate-400 text-xs font-bold block uppercase">總紀錄筆數</span>
-                          <span className="text-2xl font-black text-slate-800">{filteredRecords.length}</span>
-                        </div>
-                        <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center">
-                          <span className="text-slate-400 text-xs font-bold block uppercase">已作答人數</span>
-                          <span className="text-2xl font-black text-slate-800">
-                            {new Set(filteredRecords.map(r => `${r.studentClass}-${r.studentSeat}-${r.studentName}`)).size}
-                          </span>
-                        </div>
-                        <div className="bg-white p-4 rounded-2xl border border-slate-200 text-center col-span-2 md:col-span-1">
+                      {/* Summary Stats：燈號即篩選器 */}
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <button onClick={() => setTeacherCardFilter('all')}
+                          className={`bg-white p-4 rounded-2xl border-2 text-center transition-all ${teacherCardFilter === 'all' ? 'border-indigo-400 shadow-md' : 'border-slate-200 hover:border-slate-300'}`}>
+                          <Icon name="Users" className="w-5 h-5 text-indigo-500 mx-auto" />
+                          <span className="text-2xl font-black text-slate-800 block">{students.length}</span>
+                          <span className="text-slate-400 text-xs font-bold">已作答人數</span>
+                        </button>
+                        {['good', 'ok', 'alert'].map(k => (
+                          <button key={k} onClick={() => setTeacherCardFilter(teacherCardFilter === k ? 'all' : k)}
+                            className={`bg-white p-4 rounded-2xl border-2 text-center transition-all ${teacherCardFilter === k ? statusStyle[k].border + ' shadow-md' : 'border-slate-200 hover:border-slate-300'}`}>
+                            <span className={`inline-block w-4 h-4 rounded-full ${statusStyle[k].lamp} ring-4 ${statusStyle[k].ring}`}></span>
+                            <span className="text-2xl font-black text-slate-800 block">{statusCount[k]}</span>
+                            <span className={`text-xs font-bold ${statusStyle[k].text}`}>{statusStyle[k].label}{k === 'good' ? '(≥80)' : k === 'ok' ? '(60-79)' : '(<60)'}</span>
+                          </button>
+                        ))}
+                        <div className="bg-white p-4 rounded-2xl border-2 border-slate-200 text-center col-span-2 md:col-span-1">
                           <span className="text-slate-400 text-xs font-bold block uppercase">篩選班級</span>
                           <select
                             value={teacherClassFilter}
@@ -3764,6 +3811,7 @@
                               <option key={c} value={c}>{c}</option>
                             ))}
                           </select>
+                          <span className="text-[11px] text-slate-400">共 {filteredRecords.length} 筆紀錄</span>
                         </div>
                       </div>
 
@@ -3845,50 +3893,73 @@
                           )}
                         </div>
 
-                        {/* Records Table */}
-                        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                          <div className="overflow-x-auto custom-scrollbar">
-                            <table className="w-full text-sm">
-                              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                                <tr>
-                                  <th className="px-4 py-3 text-left">時間</th>
-                                  <th className="px-4 py-3 text-left">班級</th>
-                                  <th className="px-4 py-3 text-left">座號</th>
-                                  <th className="px-4 py-3 text-left">姓名</th>
-                                  <th className="px-4 py-3 text-left">分頁</th>
-                                  <th className="px-4 py-3 text-right">分數</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                {filteredRecords
-                                  .slice(0, 200)
-                                  .map((r) => (
-                                    <tr key={r.id} className="hover:bg-slate-50">
-                                      <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">
-                                        {r.serverTime ? new Date(r.serverTime).toLocaleString('zh-TW') : '-'}
-                                      </td>
-                                      <td className="px-4 py-2.5 font-semibold text-slate-700">{r.studentClass || '-'}</td>
-                                      <td className="px-4 py-2.5 text-slate-600">{r.studentSeat || '-'}</td>
-                                      <td className="px-4 py-2.5 font-semibold text-slate-800">{r.studentName || '(未填寫)'}</td>
-                                      <td className="px-4 py-2.5 text-slate-500">{r.tab || '-'}</td>
-                                      <td className={`px-4 py-2.5 text-right font-black ${Number(r.score) >= 60 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                        {r.score}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                {filteredRecords.length === 0 && !teacherLoading && (
-                                  <tr>
-                                    <td colSpan="6" className="px-4 py-8 text-center text-slate-400 text-sm">
-                                      尚無任何學生作答紀錄
-                                    </td>
-                                  </tr>
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
+                        {/* 學生圖卡監控 */}
+                        <div>
+                          <h3 className="text-sm font-black text-slate-700 mb-3 flex items-center gap-1.5">
+                            <Icon name="LayoutGrid" className="w-4 h-4 text-indigo-500" /> 學生學習狀態
+                            <span className="text-xs font-bold text-slate-400">({visibleStudents.length} 位{teacherCardFilter !== 'all' ? `・${statusStyle[teacherCardFilter].label}` : ''}；需關注者排最前面)</span>
+                          </h3>
+                          {visibleStudents.length === 0 ? (
+                            <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center text-slate-400 text-sm">
+                              {teacherLoading ? '資料載入中...' : '尚無符合條件的學生作答紀錄'}
+                            </div>
+                          ) : (
+                            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+                              {visibleStudents.map(st => {
+                                const sty = statusStyle[st.status];
+                                const live = st.ageMin <= 3;
+                                return (
+                                  <div key={st.key} className={`bg-white rounded-2xl border-2 ${sty.border} p-3.5 shadow-sm hover:shadow-md transition-all relative overflow-hidden`}>
+                                    <div className="flex items-start gap-3">
+                                      <div className="relative shrink-0">
+                                        <div className={`w-11 h-11 rounded-xl ${sty.soft} ${sty.text} flex items-center justify-center font-black text-lg`}>{st.seat || '?'}</div>
+                                        <span className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full ${sty.lamp} border-2 border-white ${live ? 'animate-pulse' : ''}`} title={sty.label}></span>
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-black text-slate-800 text-sm truncate">{st.code || '(未填代號)'}</p>
+                                        <p className="text-[11px] text-slate-400">{st.cls || '?'}班 {st.seat || '?'}號</p>
+                                      </div>
+                                      <div className="flex flex-col items-end gap-1 shrink-0">
+                                        <span className={`text-xl font-black leading-none ${sty.text}`}>{st.lastScore}</span>
+                                        <span className="flex items-center gap-0.5 text-[11px] font-bold">
+                                          {st.trend === 'up' && <><Icon name="TrendingUp" className="w-3.5 h-3.5 text-emerald-500" /><span className="text-emerald-500">進步</span></>}
+                                          {st.trend === 'down' && <><Icon name="TrendingDown" className="w-3.5 h-3.5 text-rose-500" /><span className="text-rose-500">退步</span></>}
+                                          {st.trend === 'flat' && <><Icon name="Minus" className="w-3.5 h-3.5 text-slate-400" /><span className="text-slate-400">持平</span></>}
+                                          {st.trend === 'new' && <span className="text-slate-300">首次</span>}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                      <div className={`h-full ${sty.bar} rounded-full transition-all duration-500`} style={{ width: `${Math.min(100, st.lastScore)}%` }}></div>
+                                    </div>
+
+                                    <div className="mt-2.5 flex flex-wrap gap-1">
+                                      {st.tabs.slice(0, 4).map(t => (
+                                        <span key={t.tab} className="inline-flex items-center gap-1 bg-slate-50 border border-slate-100 rounded-md px-1.5 py-0.5 text-[10px] font-bold text-slate-500 max-w-full" title={`${t.tab}：最近 ${t.last} 分，最高 ${t.best} 分，共 ${t.count} 次`}>
+                                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.last >= 80 ? 'bg-emerald-500' : t.last >= 60 ? 'bg-amber-400' : 'bg-rose-500'}`}></span>
+                                          <span className="truncate">{t.tab.replace(/二次式因式分解/, '因式分解').replace(/經典數字猜猜樂/, '猜猜樂')}</span>
+                                          <span className="text-slate-700">{t.last}</span>
+                                        </span>
+                                      ))}
+                                      {st.tabs.length > 4 && <span className="text-[10px] text-slate-400 font-bold px-1">+{st.tabs.length - 4}</span>}
+                                    </div>
+
+                                    <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-400 font-bold">
+                                      <span className="flex items-center gap-1"><Icon name="Clock" className="w-3 h-3" />{live ? <span className="text-emerald-500">作答中・{timeAgo(st)}</span> : timeAgo(st)}</span>
+                                      <span className="flex items-center gap-1.5">
+                                        {st.perfect && <span className="flex items-center gap-0.5 text-amber-500" title="曾拿過滿分"><Icon name="Trophy" className="w-3.5 h-3.5" />滿分</span>}
+                                        <span className="flex items-center gap-0.5" title="作答次數"><Icon name="RotateCcw" className="w-3 h-3" />{st.attempts}</span>
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                         </div>
                       </div>
-                    </div>
                   );
                 })()}
               </div>
