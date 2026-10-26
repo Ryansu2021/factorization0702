@@ -392,7 +392,11 @@
       projectId: "cross-method"
     };
     const ROOM_CODE = "class1"; // 教室代碼：不同班級/課程可以改成不同代碼，資料互不相通
-    const TEACHER_PASSCODE = "1234"; // 教師監控頁面的簡易通關密碼(僅前端畫面門檻，非真正資安機制，建議自行修改)
+    const TEACHER_PASSCODE_SHA256 = "2a4798045ff823bb9514f46f5e3c9737111130c11a7aafd310e2971a8abf9198"; // 教師密碼的 SHA-256 雜湊(僅前端門檻，非真正資安機制)
+    async function sha256Hex(text) {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
 
     const isFirebaseConfigured = () => !!FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.startsWith('請貼上');
 
@@ -1443,8 +1447,10 @@
       }, [calcA, calcB, activeTab]);
 
       // --- TAB 5 (Teacher) Actions ---
-      const handleTeacherLogin = () => {
-        if (teacherPasscodeInput === TEACHER_PASSCODE) {
+      const handleTeacherLogin = async () => {
+        let hash = '';
+        try { hash = await sha256Hex(teacherPasscodeInput); } catch (e) { hash = ''; }
+        if (hash === TEACHER_PASSCODE_SHA256) {
           setTeacherAuthed(true);
           setTeacherPasscodeError(false);
           triggerSound('success');
