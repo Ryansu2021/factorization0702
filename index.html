@@ -812,6 +812,66 @@
     }
 
     // --- Main App Component ---
+    // 自動縮放整頁容器：把內容依「視窗寬高」縮放到剛好一頁，不需上下/左右捲動。
+    // 以二分搜尋找出最大的縮放比例 scale(≤1)，並讓內容寬度 = 可用寬度 / scale，使版面隨視窗自動重排。
+    function FitPage({ enabled, minScale = 0.5, className = '', children }) {
+      const outerRef = useRef(null);
+      const innerRef = useRef(null);
+      const lastRef = useRef({ w: 0, h: 0 });
+      const [box, setBox] = useState({ availH: null, scale: 1, width: null, fits: true });
+
+      const fit = () => {
+        const outer = outerRef.current, inner = innerRef.current;
+        if (!outer || !inner) return;
+        if (!enabled) { setBox({ availH: null, scale: 1, width: null, fits: true }); return; }
+        const top = outer.getBoundingClientRect().top + window.scrollY;
+        const availH = Math.max(240, window.innerHeight - top - 6);
+        const cs = getComputedStyle(outer);
+        const availW = outer.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+        const measure = (sc) => { inner.style.width = (availW / sc) + 'px'; return inner.offsetHeight * sc; };
+        let sc = 1;
+        let fits = true;
+        if (measure(1) > availH) {
+          let lo = minScale, hi = 1;
+          for (let i = 0; i < 12; i++) {
+            const mid = (lo + hi) / 2;
+            if (measure(mid) <= availH) lo = mid; else hi = mid;
+          }
+          sc = lo;
+          fits = measure(sc) <= availH + 1;
+        }
+        inner.style.width = (availW / sc) + 'px';
+        lastRef.current = { w: availW, h: inner.offsetHeight };
+        setBox({ availH, scale: sc, width: availW / sc, fits });
+      };
+
+      React.useLayoutEffect(() => {
+        fit();
+        let raf = 0;
+        const schedule = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(fit); };
+        const ro = new ResizeObserver(() => {
+          const inner = innerRef.current, outer = outerRef.current;
+          if (!inner || !outer) return;
+          if (inner.offsetHeight === lastRef.current.h && outer.clientWidth === lastRef.current.w) return;
+          schedule();
+        });
+        if (innerRef.current) ro.observe(innerRef.current);
+        if (outerRef.current) ro.observe(outerRef.current);
+        window.addEventListener('resize', schedule);
+        return () => { ro.disconnect(); window.removeEventListener('resize', schedule); cancelAnimationFrame(raf); };
+      }, [enabled, minScale]);
+
+      return (
+        <div ref={outerRef} className={className}
+          style={enabled && box.availH ? { height: box.availH, overflowX: 'hidden', overflowY: box.fits ? 'hidden' : 'auto' } : undefined}>
+          <div ref={innerRef}
+            style={enabled && box.width ? { width: box.width, transform: `scale(${box.scale})`, transformOrigin: 'top left' } : undefined}>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
     function App() {
       const [activeTab, setActiveTab] = useState('sheet'); // 'sheet', 'writtenSheet', 'grouping', 'aform', 'bform', 'challenge', 'calculator', 'tutorial', 'teacher'
       const [classicExamVersion, setClassicExamVersion] = useState('A'); // 'A' | 'B' | 'random'
@@ -857,9 +917,35 @@
       // --- Student General Info ---
       const [studentName, setStudentName] = useState('');
       const [teacherCardFilter, setTeacherCardFilter] = useState('all');
+
       const [studentClass, setStudentClass] = useState('');
       const [studentSeat, setStudentSeat] = useState('');
       const [studentInfoConfirmed, setStudentInfoConfirmed] = useState(false);
+      // 工具列自動適應：0=完整文字、1=簡稱、2=只顯示圖示；逐級嘗試直到一列放得下；字體另以 clamp() 隨視窗縮放
+      const navRef = useRef(null);
+      const [navMode, setNavMode] = useState(0);
+      const navCompact = navMode >= 1;
+      useEffect(() => {
+        let raf = 0;
+        const overflowed = () => {
+          const el = navRef.current;
+          if (!el) return false;
+          const kids = Array.from(el.children);
+          const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
+          const total = kids.reduce((w, k) => w + k.getBoundingClientRect().width, 0) + gap * Math.max(0, kids.length - 1);
+          return total > el.clientWidth - 2;
+        };
+        const step = (mode) => {
+          setNavMode(mode);
+          raf = requestAnimationFrame(() => { raf = requestAnimationFrame(() => {
+            if (mode < 2 && overflowed()) step(mode + 1);
+          }); });
+        };
+        const check = () => { cancelAnimationFrame(raf); step(0); };
+        check();
+        window.addEventListener('resize', check);
+        return () => { window.removeEventListener('resize', check); cancelAnimationFrame(raf); };
+      }, [studentInfoConfirmed]);
 
       // --- TAB 1: Classic Cross Sheet States ---
       const [sheetAnswers, setSheetAnswers] = useState({});
@@ -1627,7 +1713,7 @@
       }
 
       return (
-        <div className="relative min-h-screen pb-6 overflow-x-hidden">
+        <div className="relative min-h-screen pb-0 overflow-x-hidden">
           <ConfettiEffect trigger={triggerConfetti} />
 
           {/* Floating Navigation / Title Banner */}
@@ -1638,7 +1724,7 @@
                   <Icon name="Grid" className="w-5 h-5 stroke-[2.5]" />
                 </div>
                 <div>
-                  <h1 className="text-sm sm:text-base xl:text-lg font-black tracking-wide flex items-center gap-2 whitespace-nowrap">
+                  <h1 style={{ fontSize: 'clamp(13px, 0.6vw + 8px, 20px)' }} className="font-black tracking-wide hidden sm:flex items-center gap-2 whitespace-nowrap">
                     快樂學十字交乘因式分解
                   </h1>
                   <p className="hidden 2xl:block text-xs text-indigo-200/80 whitespace-nowrap">
@@ -1648,69 +1734,69 @@
               </div>
 
               {/* Navigation Options */}
-              <div className="flex flex-nowrap items-center justify-end gap-1 flex-1 min-w-0 overflow-x-auto no-scrollbar">
+              <div ref={navRef} style={{ fontSize: 'clamp(11px, 0.55vw + 6px, 15px)' }} className="flex flex-nowrap items-center justify-end gap-[0.25em] flex-1 min-w-0 overflow-hidden">
                 <button
                   onClick={() => { triggerSound('click'); setActiveTab('sheet'); }}
-                  className={`px-2 py-1.5 xl:px-2.5 rounded-lg text-xs xl:text-sm font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
+                  className={`px-[0.6em] py-[0.45em] rounded-lg  font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
                     ${activeTab === 'sheet' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                 >
-                  <Icon name="FileText" className="w-4 h-4" /> <span className="hidden min-[1500px]:inline">經典數字猜猜樂</span><span className="min-[1500px]:hidden">猜猜樂</span>
+                  <Icon name="FileText" className="w-[1.1em] h-[1.1em]" /> {navMode === 2 ? null : navCompact ? '猜猜樂' : '經典數字猜猜樂'}
                 </button>
                 <button
                   onClick={() => { triggerSound('click'); setActiveTab('grouping'); }}
-                  className={`px-2 py-1.5 xl:px-2.5 rounded-lg text-xs xl:text-sm font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
+                  className={`px-[0.6em] py-[0.45em] rounded-lg  font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
                     ${activeTab === 'grouping' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                 >
-                  <Icon name="Split" className="w-4 h-4" /> <span className="hidden min-[1500px]:inline">十字交乘(提公因式)</span><span className="min-[1500px]:hidden">提公因式</span>
+                  <Icon name="Split" className="w-[1.1em] h-[1.1em]" /> {navMode === 2 ? null : navCompact ? '提公因式' : '十字交乘(提公因式)'}
                 </button>
                 <button
                   onClick={() => { triggerSound('click'); setActiveTab('aform'); }}
-                  className={`px-2 py-1.5 xl:px-2.5 rounded-lg text-xs xl:text-sm font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
+                  className={`px-[0.6em] py-[0.45em] rounded-lg  font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
                     ${activeTab === 'aform' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                 >
-                  <Icon name="Grid3x3" className="w-4 h-4" /> <span className="hidden min-[1500px]:inline">二次式因式分解(A型分解版)</span><span className="min-[1500px]:hidden">A型</span>
+                  <Icon name="Grid3x3" className="w-[1.1em] h-[1.1em]" /> {navMode === 2 ? null : navCompact ? 'A型' : '二次式因式分解(A型分解版)'}
                 </button>
                 <button
                   onClick={() => { triggerSound('click'); setActiveTab('bform'); }}
-                  className={`px-2 py-1.5 xl:px-2.5 rounded-lg text-xs xl:text-sm font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
+                  className={`px-[0.6em] py-[0.45em] rounded-lg  font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
                     ${activeTab === 'bform' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                 >
-                  <Icon name="Grid2x2" className="w-4 h-4" /> <span className="hidden min-[1500px]:inline">二次式因式分解(B型分解版)</span><span className="min-[1500px]:hidden">B型</span>
+                  <Icon name="Grid2x2" className="w-[1.1em] h-[1.1em]" /> {navMode === 2 ? null : navCompact ? 'B型' : '二次式因式分解(B型分解版)'}
                 </button>
                 <button
                   onClick={() => { triggerSound('click'); setActiveTab('writtenSheet'); }}
-                  className={`px-2 py-1.5 xl:px-2.5 rounded-lg text-xs xl:text-sm font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
+                  className={`px-[0.6em] py-[0.45em] rounded-lg  font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
                     ${activeTab === 'writtenSheet' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                 >
-                  <Icon name="Award" className="w-4 h-4" /> <span className="hidden min-[1500px]:inline">二次式因式分解</span><span className="min-[1500px]:hidden">因式分解</span>
+                  <Icon name="Award" className="w-[1.1em] h-[1.1em]" /> {navMode === 2 ? null : navCompact ? '因式分解' : '二次式因式分解'}
                 </button>
                 <button
                   onClick={() => { triggerSound('click'); setActiveTab('challenge'); }}
-                  className={`px-2 py-1.5 xl:px-2.5 rounded-lg text-xs xl:text-sm font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
+                  className={`px-[0.6em] py-[0.45em] rounded-lg  font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
                     ${activeTab === 'challenge' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                 >
-                  <Icon name="Gamepad2" className="w-4 h-4" /> <span className="hidden min-[1500px]:inline">無限挑戰模式</span><span className="min-[1500px]:hidden">挑戰</span>
+                  <Icon name="Gamepad2" className="w-[1.1em] h-[1.1em]" /> {navMode === 2 ? null : navCompact ? '挑戰' : '無限挑戰模式'}
                 </button>
                 <button
                   onClick={() => { triggerSound('click'); setActiveTab('calculator'); }}
-                  className={`px-2 py-1.5 xl:px-2.5 rounded-lg text-xs xl:text-sm font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
+                  className={`px-[0.6em] py-[0.45em] rounded-lg  font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
                     ${activeTab === 'calculator' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                 >
-                  <Icon name="Calculator" className="w-4 h-4" /> <span className="hidden min-[1500px]:inline">十字交乘計算機</span><span className="min-[1500px]:hidden">計算機</span>
+                  <Icon name="Calculator" className="w-[1.1em] h-[1.1em]" /> {navMode === 2 ? null : navCompact ? '計算機' : '十字交乘計算機'}
                 </button>
                 <button
                   onClick={() => { triggerSound('click'); setActiveTab('tutorial'); }}
-                  className={`px-2 py-1.5 xl:px-2.5 rounded-lg text-xs xl:text-sm font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
+                  className={`px-[0.6em] py-[0.45em] rounded-lg  font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
                     ${activeTab === 'tutorial' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                 >
-                  <Icon name="BookOpen" className="w-4 h-4" /> <span className="hidden min-[1500px]:inline">十字法教學</span><span className="min-[1500px]:hidden">教學</span>
+                  <Icon name="BookOpen" className="w-[1.1em] h-[1.1em]" /> {navMode === 2 ? null : navCompact ? '教學' : '十字法教學'}
                 </button>
                 <button
                   onClick={() => { triggerSound('click'); setActiveTab('teacher'); }}
-                  className={`px-2 py-1.5 xl:px-2.5 rounded-lg text-xs xl:text-sm font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
+                  className={`px-[0.6em] py-[0.45em] rounded-lg  font-bold flex items-center gap-1 shrink-0 transition-all duration-200 whitespace-nowrap
                     ${activeTab === 'teacher' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
                 >
-                  <Icon name="ShieldCheck" className="w-4 h-4" /> <span className="hidden min-[1500px]:inline">教師監控</span><span className="min-[1500px]:hidden">教師</span>
+                  <Icon name="ShieldCheck" className="w-[1.1em] h-[1.1em]" /> {navMode === 2 ? null : navCompact ? '教師' : '教師監控'}
                 </button>
               </div>
 
@@ -1726,7 +1812,7 @@
             </div>
           </div>
 
-          <div className="w-full px-3 sm:px-5 mt-3">
+          <FitPage enabled={!["teacher", "tutorial"].includes(activeTab)} minScale={0.5} className="w-full px-3 sm:px-5 mt-3">
             {/* ==================== STUDENT INFO BAR (GLOBAL) ==================== */}
             <div className="bg-white rounded-2xl px-4 py-2 mb-3 border border-slate-200 shadow-sm flex items-center justify-between gap-4">
               <div className="text-slate-600 font-bold text-sm flex items-center gap-2">
@@ -3964,7 +4050,7 @@
                 })()}
               </div>
             )}
-          </div>
+          </FitPage>
         </div>
       );
     }
