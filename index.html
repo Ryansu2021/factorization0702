@@ -1812,7 +1812,7 @@
             </div>
           </div>
 
-          <FitPage enabled={!["teacher", "tutorial"].includes(activeTab)} minScale={0.5} className="w-full px-3 sm:px-5 mt-3">
+          <FitPage enabled={!["teacher", "tutorial", "grouping", "writtenSheet"].includes(activeTab)} minScale={0.5} className="w-full px-3 sm:px-5 mt-3">
             {/* ==================== STUDENT INFO BAR (GLOBAL) ==================== */}
             <div className="bg-white rounded-2xl px-4 py-2 mb-3 border border-slate-200 shadow-sm flex items-center justify-between gap-4">
               <div className="text-slate-600 font-bold text-sm flex items-center gap-2">
@@ -1957,7 +1957,7 @@
                   <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-100 pb-4 gap-4">
                     <div>
                       <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        <Icon name="FileEdit" className="text-indigo-600" />
+                        <Icon name="FileEdit" className="w-6 h-6 text-indigo-600 shrink-0" />
                         十字分解練習
                       </h2>
                       <p className="text-xs text-slate-400 mt-1">請在「答：」輸入框中寫下您因式分解後的算式（例如：(x+4)(x-9)）</p>
